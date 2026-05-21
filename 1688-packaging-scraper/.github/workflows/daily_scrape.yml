@@ -1,0 +1,105 @@
+name: 🏭 每日1688包装爆款采集+图片分析
+
+on:
+  # 定时触发：每天北京时间 09:00 (UTC 01:00)
+  schedule:
+    - cron: '0 1 * * *'
+  # 可手动触发
+  workflow_dispatch:
+    inputs:
+      keywords_count:
+        description: '搜索关键词数量（默认8个）'
+        required: false
+        default: '8'
+        type: string
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - name: 📥 检出代码
+      uses: actions/checkout@v4
+
+    - name: 🐍 设置 Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: 📦 安装依赖
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        python -m playwright install chromium
+        python -m playwright install-deps chromium
+
+    - name: 🗂️ 创建输出目录
+      run: |
+        mkdir -p output/images output/reports login_state
+
+    - name: 🔐 还原登录状态（从 GitHub Secrets）
+      env:
+        LOGIN_STATE_JSON: ${{ secrets.LOGIN_STATE_JSON }}
+      run: |
+        if [ -n "$LOGIN_STATE_JSON" ]; then
+          echo "$LOGIN_STATE_JSON" > login_state/1688_login.json
+          echo "✅ 登录状态已还原"
+        else
+          echo "⚠️ 未设置 LOGIN_STATE_JSON Secret，将尝试自动登录"
+        fi
+
+    - name: 🏭 运行采集+分析
+      env:
+        # 1688账号（从 Secrets 读取，若无则使用 config.py 中的默认值）
+        USERNAME: ${{ secrets.USERNAME }}
+        PASSWORD: ${{ secrets.PASSWORD }}
+        # 设置 headless=True 以便在服务器上运行
+        HEADLESS: "True"
+      run: |
+        # 如果设置了 Secrets 中的账号，覆盖 config.py
+        if [ -n "$USERNAME" ]; then
+          sed -i "s/USERNAME = .*/USERNAME = \"$USERNAME\"/" config.py
+        fi
+        if [ -n "$PASSWORD" ]; then
+          sed -i "s/PASSWORD = .*/PASSWORD = \"$PASSWORD\"/" config.py
+        fi
+        python main.py 2>&1 || echo "⚠️ 采集未完全成功，尝试分析已有数据..."
+
+    - name: 🎨 图片分析（兼容：若采集失败则可对历史数据执行）
+      run: |
+        python batch_analyze.py 2>&1 || echo "ℹ️ 跳过批量分析"
+
+    - name: 📊 查看输出
+      run: |
+        ls -la output/reports/ 2>/dev/null || echo "暂无报告"
+        ls -la output/images/ 2>/dev/null || echo "暂无图片"
+        echo "---"
+        echo "今日输出文件："
+        ls -la output/ 2>/dev/null || echo "暂无输出"
+
+    - name: 📤 提交产出到本仓库
+      env:
+        # 注意：需要设置 GITHUB_TOKEN 有写入权限
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # 配置 git
+        git config user.name "Auto Scraper Bot"
+        git config user.email "bot@1688-packaging-scraper.github.com"
+
+        # 添加产出（仅报告和JSON，忽略大图片文件）
+        git add output/reports/ output/products_*.json output/analyzed_*.json
+
+        # 提交（即使没有改动也不会报错）
+        git diff --staged --exit-code || git commit -m "📊 每日采集报告 $(date +'%Y-%m-%d')"
+
+        # 推送到仓库
+        git push origin HEAD:main 2>&1 || echo "⚠️ 推送失败（可能没有写入权限或无改动）"
+
+    - name: 💾 保存登录状态（供应链后续使用）
+      if: always()
+      run: |
+        if [ -f login_state/1688_login.json ]; then
+          echo "login_state 文件大小: $(wc -c < login_state/1688_login.json) 字节"
+        fi
+        # 注意：由于 Actions 环境无持久浏览器状态，建议在本地执行 save_login.py 后手动上传状态

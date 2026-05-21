@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Login state (contains session cookies)
+login_state/
+!login_state/README.md
+
+# Output files (large/generated)
+output/images/
+output/*.json
+output/reports/*.html
+output/reports/*.xlsx
+output/reports/*.json
+output/scheduler.log
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+*.DS_Store
+Thumbs.db
+
+# Logs
+*.log

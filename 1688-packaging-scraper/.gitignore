@@ -5,6 +5,9 @@ __pycache__/
 dist/
 build/
 
+# Debug files
+debug_*
+
 # Login state (contains session cookies)
 login_state/
 !login_state/README.md
